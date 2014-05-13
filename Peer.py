@@ -3,13 +3,11 @@
 	Williams College
 	Spring 2014
 
-	Final Project: XChat*
+	Final Project: BLiP: Peer-to-Peer Chat
 	Authors: 
 		Jeremy Boissevain
 		Nile Livingston
 		Nehemiah Paramore
-
-	(*TEMPORARY NAME)
 
 	This is going to be the main executable for the chat program.
 	Each Peer is composed of various threaded processes:
@@ -18,20 +16,26 @@
 		manages an end-to-end chat session.
 
 	To Do:
-		-P2P user authentication (Jeremy)
-		-RSA encryption/decryption for privacy. (Jeremy/Nile)
-		-Address resolution via Chord. (Nile/whoever else)
-		-A chat protocol (Nehemiah)
+		-Maintain user state via simple text files:
+			-public and private user keys
+			-list of (username, public user key) pairs
+		-Provide feedback in case of authentication failure. (Nile)
+		-More sophisticated "chunking" for RSA. (Nile)
+		-Address resolution via DHT. (Not Nile)
 """
 
+# Libraries
 import sys
 import threading
 import socket
+import rsa
 
+# Local files
 import ServerThread as sv
 import ChatThread as ch
-import XChatGUI as gui
+import BLiPGUI as gui
 import LoginGUI as lgui
+
 
 class Peer():
 
@@ -42,19 +46,30 @@ class Peer():
 		# A list to hold friends.
 		self.friends = ["That guy at port 50007"]
 
-		# Start up the listener (server).
+		# The port for the listener server.
 		self.port = int(sys.argv[1])
+
+		# To hold the listener server.
 		self.server = None
 
 		# Is the user logged into the chat system?
-		#self.logged_in = False
 		self.authenticated = False
 
-		# The TKinter GUI used for XChat.
+		# The TKinter GUI used for BLiP.
 		self.gui = None
 
+		# To hold the username and password of the user.
 		self.username = None
 		self.password = None
+
+		# The key size for the public and private user keys.
+		self.key_size = 1024
+
+		# To hold the user's public and private user keys.
+		# TODO: Read from file, store them first time.
+		(self.public_user_key, self.private_user_key) = rsa.newkeys(self.key_size)
+		#self.public_user_key = None
+		#self.private_user_key = None
 
 	#########################################
 	#	ACCESSOR METHODS
@@ -65,7 +80,7 @@ class Peer():
   		return self.chats
 
   	# Returns the (IP, port) pair associated with a username.
-	# TODO: Chord stuff. Currently hard-coded for testing.
+	# TODO: Address resolution stuff with a real DHT.
 	def getAddress(self, username):
 		return ("137.165.169.58", 50007)
 
@@ -79,6 +94,15 @@ class Peer():
 	def getFriends(self):
 		return self.friends
 
+	# Return the private user key.
+	def getPrivateKey(self):
+		return self.private_user_key
+
+	# Return the public user key.
+	def getPublicKey(self):
+		return self.public_user_key
+
+	# Return the username.
   	def getUsername(self):
   		return self.username
 
@@ -99,10 +123,9 @@ class Peer():
 			self.gui.updateFriends()
 
 	# Add a ChatThread to the list and start it.
-	def addNewChatThread(self, socket, username):
-		chat = ch.ChatThread(self, socket, username, self.gui)	
+	def addNewChatThread(self, socket, auth_stance):
+		chat = ch.ChatThread(self, socket, self.gui, auth_stance)	
 		self.chats.append(chat)
-		self.gui.updateChatSessions()
 		chat.start()
 
 	def endChat(self, username):
@@ -111,16 +134,17 @@ class Peer():
 				chat.exit()
 				self.chats.remove(chat)
 				self.gui.updateChatSessions()
+				self.gui.updateChatLog()
 				return
 
 	# Make a TCP connection and start a new chat thread.
 	def initiateChat(self, username):
 		(IP, port) = self.getAddress(username)
 		sock = self.makeConnection(IP, port)
-		self.addNewChatThread(sock, username)
+		self.addNewChatThread(sock, "ACTIVE")
 
 	# Authenticate the user.
-	# TODO: make real. 
+	# TODO: Generate or read user keys.
 	def login(self, username, password):
 		self.username = username
 		self.password = password
@@ -128,6 +152,7 @@ class Peer():
 		self.server.start()
 		self.authenticated = True
 
+	# Exit out of everything.
 	def logout(self):
 		for chat in self.chats:
 			chat.exit()
@@ -156,9 +181,9 @@ class Peer():
 			self.friends.remove(username)
 			self.gui.updateFriends()
 
-	# Start up the XChat GUI.
+	# Start up the BLiP GUI.
 	def startGUI(self):
-		self.gui = gui.XChatGUI(self)
+		self.gui = gui.BLiPGUI(self)
 		self.gui.start()
 
 	# Send a message to the receiving end of an active chat.
@@ -172,7 +197,7 @@ class Peer():
 
 
 	#########################################
-	#	DEBUGGING/PRINT METHODS
+	#	PRIVATE METHODS
 	#########################################
 
 

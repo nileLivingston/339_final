@@ -3,13 +3,11 @@
 	Williams College
 	Spring 2014
 
-	Final Project: XChat*
+	Final Project: BLiP: Peer-to-Peer Chat
 	Authors: 
 		Jeremy Boissevain
 		Nile Livingston
 		Nehemiah Paramore
-
-	(*TEMPORARY NAME)
 
 	This is a thread that manages incoming chat requests.
 	On accepting a request, a new ChatThread is created and tasked with 
@@ -17,6 +15,7 @@
 """
 
 import socket
+from socket import SHUT_WR
 import threading
 import ChatThread as ch
 
@@ -36,12 +35,12 @@ class ServerThread(threading.Thread):
 			return
 
 		# Bind socket.
-		try:	
-			self.s.bind((HOST, PORT))
-			print "Server initialized with port: " + str(PORT)
-		except:
-			print "SERVER: Socket error: bind()"
-			return
+		#try:	
+		self.s.bind((HOST, PORT))
+		print "Server initialized with port: " + str(PORT)
+		#except:
+			#print "SERVER: Socket error: bind()"
+			#return
 
 		self.peer = peer	# The peer that contains this ServerThread.
 
@@ -51,6 +50,7 @@ class ServerThread(threading.Thread):
 	# Close the socket.
 	def exit(self):
 		print "SERVER QUITTING"
+		#self.s.shutdown(SHUT_WR)
 		self.s.close()
 		self.running = False
 	
@@ -67,5 +67,5 @@ class ServerThread(threading.Thread):
 			# TODO: confirm connections?
 			# TODO: Authenticate/trade keys.
 			print "Incoming connection from: " + str(addr)
-			self.peer.addNewChatThread(conn, str(addr))
+			self.peer.addNewChatThread(conn, "PASSIVE")
 

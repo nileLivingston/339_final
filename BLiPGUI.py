@@ -3,20 +3,18 @@
 	Williams College
 	Spring 2014
 
-	Final Project: XChat*
+	Final Project: BLiP: Peer-to-Peer Chat
 	Authors: 
 		Jeremy Boissevain
 		Nile Livingston
 		Nehemiah Paramore
 
-	(*TEMPORARY NAME)
-
-	This class contains the GUI for the main XChat program.
+	This class contains the GUI for the main BLiP program.
 """
 
 from Tkinter import *
 
-class XChatGUI():
+class BLiPGUI():
 
 	# Constructs all of the components and packs them.
 	def __init__(self, peer):
@@ -29,9 +27,9 @@ class XChatGUI():
 		############################################################################
 		# Main window.
 		self.root = Tk()
-		self.root.wm_title("XChat")
+		self.root.wm_title("BLiP Chat")
 		
-
+		
 		# The left frame, which contains the active chat list, the friends list, and
 		# accompanying buttons/entries.
 		left_frame = Frame(self.root)
@@ -84,7 +82,7 @@ class XChatGUI():
 
 		# The chat log.
 		self.chat_log = Text(right_frame, width=100, bd=2, relief="sunken")
-		self.chat_log.insert(INSERT, "Welcome to XChat!\n")
+		self.chat_log.insert(INSERT, "Welcome to BLiP!\n")
 		self.chat_log.pack(side=TOP)
 		self.chat_log.config(state=DISABLED)
 

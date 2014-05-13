@@ -3,15 +3,13 @@
 	Williams College
 	Spring 2014
 
-	Final Project: XChat*
+	Final Project: BLiP: Peer-to-Peer Chat
 	Authors: 
 		Jeremy Boissevain
 		Nile Livingston
 		Nehemiah Paramore
 
-	(*TEMPORARY NAME)
-
-	This class contains the GUI for the XChat login window.
+	This class contains the GUI for the BLiP login window.
 """
 
 from Tkinter import *
@@ -22,7 +20,7 @@ class LoginGUI():
 		self.parent = parent
 
 		self.root= Tk()
-		self.root.wm_title("XChat Login")
+		self.root.wm_title("BLiP Login")
 
 		Label(self.root, text="Please enter your user information.").pack(side=TOP)
 		
