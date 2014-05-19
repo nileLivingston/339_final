@@ -17,6 +17,7 @@ import threading
 import rsa
 from rsa.bigfile import *
 import random
+import os
 
 class ChatThread(threading.Thread):
 
@@ -60,6 +61,9 @@ class ChatThread(threading.Thread):
 		# The bit size of the session keys.
 		self.key_size = 512 
 
+		# The bit size of chat messages.
+		self.message_size = 1024
+
 	# Store, send, and print lines of the conversation.
 	def run(self):
 		# Exchange usernames and keys, authenticate, exchange session keys.
@@ -86,14 +90,34 @@ class ChatThread(threading.Thread):
 		
 
 		while self.running:
-			data = self.sock.recv(1024)
+			# Get data from the socket.
+			data = self.sock.recv(self.message_size)
 
+			if not self.running:
+				return
+
+			# On receiving this command, chat should end.
 			if data == "/FAREWELL":
 				self.peer.endChat(self.receiver_username, "PASSIVE")
 				return
 
-			# Decrypt the message.
-			decrypted = rsa.decrypt(data, self.private_session_key)
+			# Write the encrypted message into a file.
+			f = open("encr", "w+")
+			f.write(data)
+			f.close()
+
+			# Decrypt the message using VARBLOCK format.
+			with open('encr', 'rb') as infile, open('decr', 'w+') as outfile:
+				decrypt_bigfile(infile, outfile, self.private_session_key)
+
+			# Copy the contents of the decrypted file to a string.
+			f = open("decr", "r")
+			decrypted = f.read(os.stat("decr").st_size)
+			f.close()
+
+			# Remove the temporary files.
+			os.remove("encr")
+			os.remove("decr")
 
 			# Append the message to the log and call the GUI update.
 			self.log.append(self.receiver_username + " > " + decrypted)
@@ -134,22 +158,39 @@ class ChatThread(threading.Thread):
 
 	# Send a message to the receiver of this chat session.
 	def sendMessage(self, message):
-		# Split message into (self.key_size / 8) - 11 chunks
-		# TODO: TEMPORARY SOLUTION, For encryption purposes
-		chunk_size = int((self.key_size / 8) - 11)
+		# Split up messages into self.message_size sized chunks.
+		num_blocks = self.message_size / (64 * 8)
+		chunk_size = self.message_size - (11 * 8 * num_blocks)
 		messages = []
 		for i in xrange(0, len(message), chunk_size):
 			messages.append(message[i:i+chunk_size])
 
+		# For each chunk of the message.
 		for message in messages:
+
 			# Update the chat log.
 			self.log.append(self.peer.getUsername() + " > " +  message)
 
-			# Encrypt the message.
-			message = rsa.encrypt(message, self.receiver_public_session_key)
+			# Write the plaintext message to a file.
+			f = open("message_in", "w")
+			f.write(message)
+			f.close()
 
-			# Send the message
-			self.sock.sendall(message)
+			# Encrypt the message file.
+			with open('message_in', 'rb') as infile, open('message_out', 'wb') as outfile:
+				encrypt_bigfile(infile, outfile, self.receiver_public_session_key)
+
+			# Copy the encrypted file contents to a string.
+			f = open("message_out", "r")
+			encrypted = f.read(os.stat('message_out').st_size)
+			f.close()
+
+			# Remove the temporary files.
+			os.remove("message_in")
+			os.remove("message_out")
+
+			# Send the encrypted message.
+			self.sock.sendall(encrypted)
 
 		# Update the GUI.
 		self.gui.updateChatLog()
@@ -174,7 +215,7 @@ class ChatThread(threading.Thread):
 		if my_congruent_state == "True":
 			self.sock.sendall("True")
 			# Receive congruent state message from receiver.
-			their_congruent_state = self.sock.recv(1024)
+			their_congruent_state = self.sock.recv(self.message_size)
 
 			# If their state is congruent, proceed.
 			if their_congruent_state == "True":
@@ -183,14 +224,14 @@ class ChatThread(threading.Thread):
 				self.sock.sendall(my_verifier)
 
 				# Receive initiator's verifier string
-				their_verifier = self.sock.recv(1024)
+				their_verifier = self.sock.recv(self.message_size)
 
 				# Sign and send
 				my_signature = rsa.sign(their_verifier, self.peer.getPrivateKey(), 'SHA-1')
 				self.sock.sendall(my_signature) 
 
 				# Receive initiator's signature
-				their_signature = self.sock.recv(1024)
+				their_signature = self.sock.recv(self.message_size)
 
 				# Verify the signature and send the response.
 				try:
@@ -202,7 +243,7 @@ class ChatThread(threading.Thread):
 					return False
 
 				# Receive initiator's authorization status.
-				their_decision = self.sock.recv(1024)
+				their_decision = self.sock.recv(self.message_size)
 				if not their_decision == "True":
 					self.peer.endChat(self.receiver_username)
 					return False
@@ -229,7 +270,7 @@ class ChatThread(threading.Thread):
 		self.sock.sendall(encoded)
 
 		# Receive (initiator username, initiator public key)
-		decoded = self.sock.recv(1024).split(",")
+		decoded = self.sock.recv(self.message_size).split(",")
 		# Decode and assign.
 		self.receiver_username = decoded[0]
 		self.receiver_user_key = rsa.PublicKey(long(decoded[1]), long(decoded[2]))
@@ -246,7 +287,7 @@ class ChatThread(threading.Thread):
 		self.sock.sendall(encoded)
 
 		# Receive (n, e) from receiver.
-		decoded = self.sock.recv(1024).split(",")
+		decoded = self.sock.recv(self.message_size).split(",")
 		# Decode and assign
 		receiver_n = long(decoded[0])
 		receiver_e = long(decoded[1])
@@ -257,7 +298,7 @@ class ChatThread(threading.Thread):
 	# Returns whether or not authentication
 	def passiveAuthenticate(self):
 		# Receive congruent state message from receiver.
-		their_congruent_state = self.sock.recv(1024)
+		their_congruent_state = self.sock.recv(self.message_size)
 		# If their state is congruent, proceed.
 		if their_congruent_state == "True":
 
@@ -278,21 +319,21 @@ class ChatThread(threading.Thread):
 				self.sock.sendall("True")
 
 				# Receive initiator's verifier string
-				their_verifier = self.sock.recv(1024)
+				their_verifier = self.sock.recv(self.message_size)
 
 				# Compose verifier int V and send it.
 				my_verifier = str(random.getrandbits(512))
 				self.sock.sendall(my_verifier)
 
 				# Receive initiator's signature
-				their_signature = self.sock.recv(1024)
+				their_signature = self.sock.recv(self.message_size)
 
 				# Sign and send
 				my_signature = rsa.sign(their_verifier, self.peer.getPrivateKey(), 'SHA-1')
 				self.sock.sendall(my_signature) 
 
 				# Receive initiator's authorization status.
-				their_decision = self.sock.recv(1024)
+				their_decision = self.sock.recv(self.message_size)
 				if not their_decision == "True":
 					self.peer.endChat(self.receiver_username)
 					return False
@@ -323,7 +364,7 @@ class ChatThread(threading.Thread):
 	# From perspective of chat session reciprocator.
 	def passiveHandshake(self):
 		# Receive (initiator username, initiator public key)
-		decoded = self.sock.recv(1024).split(",")
+		decoded = self.sock.recv(self.message_size).split(",")
 		# Decode and assign.
 		self.receiver_username = decoded[0]
 		self.receiver_user_key = rsa.PublicKey(long(decoded[1]), long(decoded[2]))
@@ -338,7 +379,7 @@ class ChatThread(threading.Thread):
 	# From perspective of chat session reciprocator.
 	def passiveSessionKeyExchange(self):
 		# Receive (n, e) from receiver.
-		decoded = self.sock.recv(1024).split(",")
+		decoded = self.sock.recv(self.message_size).split(",")
 		# Decode and assign
 		receiver_n = long(decoded[0])
 		receiver_e = long(decoded[1])

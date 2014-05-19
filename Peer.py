@@ -16,9 +16,17 @@
 		manages an end-to-end chat session.
 
 	To Do:
-		-More sophisticated "chunking" for RSA. (Nile)
 		-Address resolution via DHT.
-		-Evaluation 
+		-Evaluation
+
+	Bugs to fix:
+		-Sending too much chat data breaks receiver,
+		due to RSA VARBLOCK stuff. You have to send
+		around 1000 chars at once to break it.
+
+	Small touches:
+		-Make chat window auto-scroll.
+
 """
 
 # Libraries
@@ -143,10 +151,14 @@ class Peer():
 
 	# Add a username to the friends list without knowing public key.
 	def addFriend(self, username):
+		if username in self.friends:
+			self.gui.showMessage("This username is already in your friends list.")
+			return
 		# Forever alone
 		if username == self.username:
 			self.gui.showMessage("You cannot be friends with yourself.")
 			return
+		
 		self.addUserAndKey(username, None)
 
 	# Add a username and associated key to friends list.
@@ -292,6 +304,9 @@ class Peer():
 			# Update dict and GUI.
 			self.friends.pop(username)
 			self.gui.updateFriends()
+		else:
+			self.gui.showMessage("This username is not in your friends list.")
+			return
 
 	# Start up the BLiP GUI.
 	def startGUI(self):
