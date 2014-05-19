@@ -16,12 +16,9 @@
 		manages an end-to-end chat session.
 
 	To Do:
-		-Maintain user state via simple text files:
-			-public and private user keys
-			-list of (username, public user key) pairs
-		-Provide feedback in case of authentication failure. (Nile)
 		-More sophisticated "chunking" for RSA. (Nile)
-		-Address resolution via DHT. (Not Nile)
+		-Address resolution via DHT.
+		-Evaluation 
 """
 
 # Libraries
@@ -29,6 +26,8 @@ import sys
 import threading
 import socket
 import rsa
+import os
+import os.path
 
 # Local files
 import ServerThread as sv
@@ -43,10 +42,35 @@ class Peer():
 		# A list to hold ChatThreads.
 		self.chats = []
 
-		# A list to hold friends.
-		self.friends = ["That guy at port 50007"]
+		# To hold (username, public user key) pairs.
+		self.friends = dict()
+
+		# The file path for the persistent friends list.
+		# This file contains lines of the form:
+		# 	friend_username,key.n,key.e
+		self.friendsFilePath = "friends.txt"
+
+		# The filename storing the user keys
+		self.userKeyFilePath = 'user_keys.pem'
+
+		# Grab the friends file and extract to self.friends.
+		if os.path.isfile(self.friendsFilePath):
+			f = open(self.friendsFilePath, "r")
+			lines = f.readlines()
+			f.close()
+			for line in lines:
+				parts = line.split(",")
+				username = parts[0]
+				key_n = long(parts[1])
+				key_e = long(parts[2])
+				self.friends[username] = rsa.PublicKey(key_n, key_e)
+		# Make the friends file.
+		else:
+			f = open(self.friendsFilePath, "w")
+			f.close()
 
 		# The port for the listener server.
+		# TODO: Currently a command line argument for testing. Set to constant later.
 		self.port = int(sys.argv[1])
 
 		# To hold the listener server.
@@ -58,18 +82,15 @@ class Peer():
 		# The TKinter GUI used for BLiP.
 		self.gui = None
 
-		# To hold the username and password of the user.
 		self.username = None
-		self.password = None
 
 		# The key size for the public and private user keys.
 		self.key_size = 1024
 
 		# To hold the user's public and private user keys.
-		# TODO: Read from file, store them first time.
-		(self.public_user_key, self.private_user_key) = rsa.newkeys(self.key_size)
-		#self.public_user_key = None
-		#self.private_user_key = None
+		self.public_user_key = None
+		self.private_user_key = None
+	
 
 	#########################################
 	#	ACCESSOR METHODS
@@ -85,14 +106,15 @@ class Peer():
 		return ("137.165.169.58", 50007)
 
   	# Returns the chat thread associated with a particular username.
+  	# Return None if no such chat session exists.
 	def getChatSession(self, username):
 		for chat in self.chats:
 			if chat.getReceiver() == username: return chat
-		return "ERROR: No such chat session"
+		return None
 
 	# Return the list of friend usernames.
 	def getFriends(self):
-		return self.friends
+		return self.friends.keys()
 
 	# Return the private user key.
 	def getPrivateKey(self):
@@ -106,6 +128,10 @@ class Peer():
   	def getUsername(self):
   		return self.username
 
+  	# Get the public user key for a particular username.
+  	def getUserKeyFor(self, username):
+  		return self.friends[username]
+
   	# Is the user logged into the chat system?
 	def isAuthenticated(self):
 		return self.authenticated
@@ -115,12 +141,52 @@ class Peer():
 	#	MUTATOR METHODS
 	#########################################
 
-	# Add a username to the friends list.
+	# Add a username to the friends list without knowing public key.
 	def addFriend(self, username):
-		if not username in self.friends:
-			self.friends.append(username)
-			self.friends.sort()
-			self.gui.updateFriends()
+		# Forever alone
+		if username == self.username:
+			self.gui.showMessage("You cannot be friends with yourself.")
+			return
+		self.addUserAndKey(username, None)
+
+	# Add a username and associated key to friends list.
+	def addUserAndKey(self, username, key):
+		# Name already in file, just need to update key.
+		if username in self.friends:
+
+			# Get all of the current content of the friends file, but
+			# overwrite the line with the username we're looking for.
+			f = open(self.friendsFilePath, "r")
+			lines = f.readlines()
+			contents = ""
+			for line in lines:
+				cur = line[:line.index(',')]
+				if not cur == username:
+					contents += line
+				else:
+					contents += cur + "," + str(key.n) + "," + str(key.e) + "\n"
+			f.close()
+
+			# Remove the file.
+			os.remove(self.friendsFilePath)
+
+			# Rewrite the file with the updated info.
+			f = open(self.friendsFilePath, "w+")
+			f.write(contents)
+			f.close()
+
+		# Name not in file, just append the line.
+		else:
+			f = open(self.friendsFilePath, "a")
+			if key == None:
+				f.write(username + ",None,None\n")
+			else:
+				f.write(username + "," + str(key.n) + "," + str(key.e) + "\n")
+			f.close()
+
+		# Update the dict and the GUI.
+		self.friends[username] = key
+		self.gui.updateFriends()
 
 	# Add a ChatThread to the list and start it.
 	def addNewChatThread(self, socket, auth_stance):
@@ -128,10 +194,13 @@ class Peer():
 		self.chats.append(chat)
 		chat.start()
 
-	def endChat(self, username):
+	# End the chat session associated with a particular username.
+	# stance describes whether we're leaving or being left.
+	# values are "ACTIVE" and "PASSIVE", respectively.
+	def endChat(self, username, stance):
 		for chat in self.chats:
 			if chat.getReceiver() == username:
-				chat.exit()
+				chat.exit(stance)
 				self.chats.remove(chat)
 				self.gui.updateChatSessions()
 				self.gui.updateChatLog()
@@ -139,27 +208,53 @@ class Peer():
 
 	# Make a TCP connection and start a new chat thread.
 	def initiateChat(self, username):
+		# Get the address and make the connection.
 		(IP, port) = self.getAddress(username)
 		sock = self.makeConnection(IP, port)
+
+		# If socket fails, friend is not online.
+		if sock == None:
+			self.gui.showMessage("Friend is not online.")
+			return
+		
+		# Create chat thread.
 		self.addNewChatThread(sock, "ACTIVE")
 
 	# Authenticate the user.
-	# TODO: Generate or read user keys.
-	def login(self, username, password):
+	def login(self, username):
 		self.username = username
-		self.password = password
+
+		# .pem file exists, read from it.
+		if os.path.isfile(self.userKeyFilePath): 
+			keyFile = open(self.userKeyFilePath, 'r').read()
+			self.public_user_key = rsa.PublicKey.load_pkcs1(keyFile)
+			self.private_user_key = rsa.PrivateKey.load_pkcs1(keyFile)
+			
+		# .pem file doesn't exist, generate new keys and write to file.
+		else:
+			(self.public_user_key, self.private_user_key) = rsa.newkeys(self.key_size)
+			keyFile = open(self.userKeyFilePath, 'w')
+			public_Pem = self.public_user_key.save_pkcs1()
+			private_Pem = self.private_user_key.save_pkcs1()
+			keyFile.write(public_Pem)
+			keyFile.write(private_Pem)
+		
+		self.authenticated = True
+
+		# Start up the listener server.
 		self.server = sv.ServerThread(self, self.port)
 		self.server.start()
-		self.authenticated = True
+		
 
 	# Exit out of everything.
 	def logout(self):
 		for chat in self.chats:
-			chat.exit()
+			chat.exit("ACTIVE")
 		self.server.exit()
 		self.authenticated = False
 
 	# Make a TCP connection with (IP, port) and return socket.
+	# Return None if socket fails.
 	def makeConnection(self, IP, port):
 		# DEBUGGING tool
 		print "Connecting to " + IP + ":" + str(port) + "..."
@@ -168,17 +263,34 @@ class Peer():
 			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		except:
 			print "CLIENT: Socket error: socket()"
+			return None
 
 		try:
 			sock.connect((IP, port))
 			return sock
 		except:
 			print "CLIENT: Socket error: connect()"	
+			return None
 		
 	# Remove a username from the friends list.
 	def removeFriend(self, username):
 		if username in self.friends:
-			self.friends.remove(username)
+			# Remove friend from file.
+			f = open(self.friendsFilePath, "r")
+			lines = f.readlines()
+			contents = ""
+			for line in lines:
+				cur = line[:line.index(',')]
+				if not cur == username:
+					contents += line
+			f.close()
+			os.remove(self.friendsFilePath)
+			f = open(self.friendsFilePath, "w+")
+			f.write(contents)
+			f.close()
+
+			# Update dict and GUI.
+			self.friends.pop(username)
 			self.gui.updateFriends()
 
 	# Start up the BLiP GUI.
@@ -187,20 +299,19 @@ class Peer():
 		self.gui.start()
 
 	# Send a message to the receiving end of an active chat.
-	# If no such user is active, just print a message.
+	# If no such user is active, return None.
 	def sendMessage(self, username, message):
 		for thread in self.chats:
 			if thread.getReceiver() == username:
 				thread.sendMessage(message)
 				return
-		print "ERROR: no such active chat; looking for " + username
+		return None
 
+################################################################
+#	Main method stuff below.
+################################################################
 
-	#########################################
-	#	PRIVATE METHODS
-	#########################################
-
-
+# Login/logout loop for BLiP.
 def run(peer):
 	loginwindow = lgui.LoginGUI(peer)
 	loginwindow.run()

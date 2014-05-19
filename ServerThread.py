@@ -30,6 +30,7 @@ class ServerThread(threading.Thread):
 		# Establish socket.
 		try:
 			self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		except:
 			print "SERVER: Socket error: socket()"
 			return
@@ -50,7 +51,6 @@ class ServerThread(threading.Thread):
 	# Close the socket.
 	def exit(self):
 		print "SERVER QUITTING"
-		#self.s.shutdown(SHUT_WR)
 		self.s.close()
 		self.running = False
 	
@@ -64,8 +64,7 @@ class ServerThread(threading.Thread):
 			conn, addr = self.s.accept()
 
 			# If user is logged in, set up a new ChatThread and add it.
-			# TODO: confirm connections?
-			# TODO: Authenticate/trade keys.
-			print "Incoming connection from: " + str(addr)
-			self.peer.addNewChatThread(conn, "PASSIVE")
+			if self.peer.isAuthenticated():
+				print "Incoming connection from: " + str(addr)
+				self.peer.addNewChatThread(conn, "PASSIVE")
 

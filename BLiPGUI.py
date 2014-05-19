@@ -13,6 +13,7 @@
 """
 
 from Tkinter import *
+import tkMessageBox
 
 class BLiPGUI():
 
@@ -126,7 +127,7 @@ class BLiPGUI():
 
 	# Tell the peer to end an active chat session.
 	def leaveChat(self):
-		self.peer.endChat(self.active_chat_session)
+		self.peer.endChat(self.active_chat_session, "ACTIVE")
 		self.chatSelect(None)
 
 	# Remove a friend from the friends list.
@@ -141,10 +142,11 @@ class BLiPGUI():
 
 	# Initiate a chat with the selected friend.
 	def startChat(self):
-		username = self.friends.get(self.friends.curselection())
-		if username == None:
-			return
-		self.peer.initiateChat(username)
+		if not self.friends.curselection() == ():
+			username = self.friends.get(self.friends.curselection())
+			if username == None:
+				return
+			self.peer.initiateChat(username)
 
 	# Send a message to the active chat receiver and
 	# update the chat log.
@@ -195,17 +197,23 @@ class BLiPGUI():
 		self.chat_log.delete(0.0, END)
 
 		# Only update if there is an active chat. Leave empty otherwise.
-		if not self.active_chat_session == None:
+		if not (self.active_chat_session == None or self.active_chat_session == ""):
 			# Get the chat log from the chat thread and update the text log.
 			chat_session = self.peer.getChatSession(self.active_chat_session)
 			log = chat_session.getLog()
 			
-			for (username, message) in log:
-				#self.chat_text.set(self.chat_text.get() + username + "> " + message + "\n")
-				self.chat_log.insert(INSERT, username + "> " + message + "\n")
+			for line in log:
+				self.chat_log.insert(INSERT, line + "\n")
 
 		# Make the log uneditable.
 		self.chat_log.config(state=DISABLED)
+
+	#########################################
+	#	MESSAGE METHODS
+	#########################################
+
+	def showMessage(self, text):
+		tkMessageBox.showinfo("BLiP Warning", text)
 
 	#########################################
 	#	START/STOP METHODS
