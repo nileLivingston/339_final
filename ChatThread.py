@@ -53,12 +53,21 @@ class ChatThread(threading.Thread):
 		# To hold the public session key of the receiver.
 		self.receiver_public_session_key = None
 
+		#receiver ip
+		self.receiver_ip = None
+
+		#receiver udp port
+		self.receiver_udp_port = None
+
 		# Describes whether the chat thread is requesting or receiving the chat request;
 		# important for authentication purposes. Value is either "ACTIVE" or "PASSIVE".
 		self.auth_stance = auth_stance
 
 		# The bit size of the session keys.
 		self.key_size = 512 
+
+		#Port to use
+		self.udp_port = 50007
 
 	# Store, send, and print lines of the conversation.
 	def run(self):
@@ -68,14 +77,14 @@ class ChatThread(threading.Thread):
 			success = self.activeAuthenticate()
 			if not success:
 				return
-			self.peer.addUserAndKey(self.receiver_username, self.receiver_user_key)
+			self.peer.addUserAndKey(self.receiver_username, self.receiver_user_key, self.receiver_ip, self.receiver_udp_port)
 			self.activeSessionKeyExchange()
 		elif self.auth_stance == "PASSIVE":
 			self.passiveHandshake()
 			success = self.passiveAuthenticate()
 			if not success:
 				return
-			self.peer.addUserAndKey(self.receiver_username, self.receiver_user_key)
+			self.peer.addUserAndKey(self.receiver_username, self.receiver_user_key, self.receiver_ip, self.receiver_udp_port)
 			self.passiveSessionKeyExchange()
 
 		self.gui.updateChatSessions()
@@ -224,8 +233,10 @@ class ChatThread(threading.Thread):
 	def activeHandshake(self):
 		username = self.peer.getUsername()
 		pub_key = self.peer.getPublicKey()
+		ip = str(socket.gethostbyname(socket.getfqdn()))
 		# Pack into protocol and send.
-		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e)
+		# UDP port is static for now, but may later allow it to be changed, so we exchange ports for now.
+		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + self.udp_port
 		self.sock.sendall(encoded)
 
 		# Receive (initiator username, initiator public key)
@@ -233,6 +244,8 @@ class ChatThread(threading.Thread):
 		# Decode and assign.
 		self.receiver_username = decoded[0]
 		self.receiver_user_key = rsa.PublicKey(long(decoded[1]), long(decoded[2]))
+		self.receiver_ip = decoded[3]
+		self.receiver_udp_port = decoded[4]
 
 	# Generate and exchange public session keys with the receiver.
 	# From perspective of chat session initiator.
@@ -327,11 +340,15 @@ class ChatThread(threading.Thread):
 		# Decode and assign.
 		self.receiver_username = decoded[0]
 		self.receiver_user_key = rsa.PublicKey(long(decoded[1]), long(decoded[2]))
+		self.receiver_ip = decoded[3]
+		self.receiver_udp_port = decoded[4]
  
 		username = self.peer.getUsername()
 		pub_key = self.peer.getPublicKey()
+		ip = str(socket.gethostbyname(socket.getfqdn()))
 		# Pack into protocol and send.
-		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e)
+		# UDP port is static for now, but may later allow it to be changed, so we exchange ports for now.
+		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + self.udp_port
 		self.sock.sendall(encoded)
 
 	# Generate and exchange public session keys with the receiver.

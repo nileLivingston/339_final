@@ -47,44 +47,36 @@ class Peer():
 
 		# To hold (username, public user key) pairs.
 		self.friends = dict()
-                self.friendsStub = dict()
+		self.friendObjects = dict()
 
 		# The file path for the persistent friends list.
 		# This file contains lines of the form:
 		# 	friend_username,key.n,key.e
-		self.friendsFilePath = "friends.txt"
-                self.friendJson = "friends.json"
+		self.friendsJson = 'friends.json'
 
 		# The filename storing the user keys
+
+
 		self.userKeyFilePath = 'user_keys.pem'
 
-                # Given that I'm now treating the friends file as a Json File
-                if os.path.isfile(self.friendsJson):
-                        with open(self.friendsJson) as friends:
-                                data = json.load(friends)
-                                friends.close()
-                                self.friends = data
-                else:
-                        data = open(self.friendsJson, "w")
-                        data.close()
-                
-		# Grab the friends file and extract to self.friends.
-		"""
-                if os.path.isfile(self.friendsFilePath):
-			f = open(self.friendsFilePath, "r")
-			lines = f.readlines()
+		# Given that I'm now treating the friends file as a Json File
+		if os.path.isfile(self.friendsJson):
+			f = open(self.friendsJson, "r+")
+			try:
+				data = json.load(f)
+				self.friendObjects = data
+				for friend in friendObjects:
+					self.friends[friend.key()] = friend[key]
+				self.gui.updateFriends()
+				print "try succeeded"
+			except:
+				print "try failed."
+				pass	
 			f.close()
-			for line in lines:
-				parts = line.split(",")
-				username = parts[0]
-				key_n = long(parts[1])
-				key_e = long(parts[2])
-				self.friends[username] = rsa.PublicKey(key_n, key_e)
-		# Make the friends file.
+
 		else:
-			f = open(self.friendsFilePath, "w")
-			f.close()
-                """
+			data = open(self.friendsJson, "w")
+			data.close()
 
 		# The port for the listener server.
 		# TODO: Currently a command line argument for testing. Set to constant later.
@@ -108,25 +100,26 @@ class Peer():
 		self.public_user_key = None
 		self.private_user_key = None
 
-                # DHT node thread, initialize here.
-                self.node = nt.NodeThread(self, self.username, self.getAddress)
+		# DHT node thread, initialize here.
+		#self.node = nt.NodeThread(self, self.username, self.getAddress)
 
 	#########################################
 	#	ACCESSOR METHODS
 	#########################################
 
 	# Return the list of active ChatThreads
-  	def getActiveChats(self):
-  		return self.chats
+	def getActiveChats(self):
+		return self.chats
 
-  	# Returns the (IP, port) pair associated with a username.
+	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
 	def getAddress(self, username):
-                return (str(socket.gethostbyname(socket.getfqdn())), 50007)
+		#todo:DHT
+		return (str(socket.gethostbyname(socket.getfqdn())), 50007)
 		#return ("137.165.169.58", 50007)
 
-  	# Returns the chat thread associated with a particular username.
-  	# Return None if no such chat session exists.
+	# Returns the chat thread associated with a particular username.
+	# Return None if no such chat session exists.
 	def getChatSession(self, username):
 		for chat in self.chats:
 			if chat.getReceiver() == username: return chat
@@ -134,9 +127,9 @@ class Peer():
 
 	# Return the list of friend usernames.
 	def getFriends(self):
-                output = self.friends.keys()
-                output.sort()
-                return output
+				output = self.friends.keys()
+				output.sort()
+				return output
 
 	# Return the private user key.
 	def getPrivateKey(self):
@@ -147,14 +140,14 @@ class Peer():
 		return self.public_user_key
 
 	# Return the username.
-  	def getUsername(self):
-  		return self.username
+	def getUsername(self):
+		return self.username
 
-  	# Get the public user key for a particular username.
-  	def getUserKeyFor(self, username):
-  		return self.friends[username]
+	# Get the public user key for a particular username.
+	def getUserKeyFor(self, username):
+		return self.friends[username]
 
-  	# Is the user logged into the chat system?
+	# Is the user logged into the chat system?
 	def isAuthenticated(self):
 		return self.authenticated
 
@@ -169,52 +162,26 @@ class Peer():
 		if username == self.username:
 			self.gui.showMessage("You cannot be friends with yourself.")
 			return
-		self.addUserAndKey(username, None)
+		self.addUserAndKey(username, None, None, None)
 
-                
+				
 	# Add a username and associated key to friends list.
-	def addUserAndKey(self, username, key):
-                
+	def addUserAndKey(self, username, key, ip, port):
+		#change friends dictionary
+		friend = {"key":key, "ip": ip, "port":port}
 
-	# Add a username and associated key to friends list.
-	def addUserAndKey(self, username, key):
-		# Name already in file, just need to update key.
-		if username in self.friends:
-
-			# Get all of the current content of the friends file, but
-			# overwrite the line with the username we're looking for.
-			f = open(self.friendsFilePath, "r")
-			lines = f.readlines()
-			contents = ""
-			for line in lines:
-				cur = line[:line.index(',')]
-				if not cur == username:
-					contents += line
-				else:
-					contents += cur + "," + str(key.n) + "," + str(key.e) + "\n"
-			f.close()
-
-			# Remove the file.
-			os.remove(self.friendsFilePath)
-
-			# Rewrite the file with the updated info.
-			f = open(self.friendsFilePath, "w+")
-			f.write(contents)
-			f.close()
-
-		# Name not in file, just append the line.
-		else:
-			f = open(self.friendsFilePath, "a")
-			if key == None:
-				f.write(username + ",None,None\n")
-			else:
-				f.write(username + "," + str(key.n) + "," + str(key.e) + "\n")
-			f.close()
-
-		# Update the dict and the GUI.
+		self.friendObjects[username] = friend
 		self.friends[username] = key
+
+		#remove existing file
+		os.remove(self.friendsJson)
+
+		#write to file
+		f = open(self.friendsJson, "w")
+		json.dump(self.friendObjects, f)
+
 		self.gui.updateFriends()
-                
+
 	# Add a ChatThread to the list and start it.
 	def addNewChatThread(self, socket, auth_stance):
 		chat = ch.ChatThread(self, socket, self.gui, auth_stance)	

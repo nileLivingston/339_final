@@ -16,12 +16,12 @@
 import threading
 import entangled.node
 
-class NodeThread(threading.Thread, username, IPAddress):
+class NodeThread(threading.Thread):
     """
     @param : username - Username of caller [string]
     @param : IPAddress - address of caller ('ipaddress', port)
     """
-    def __init__(self):
+    def __init__(self, username, IPAddress):
         self.node = entangled.node.EntangledNode()
         # publish own connection info. not sure if this should 
         # happen later after attempting to join nodes or before. 
