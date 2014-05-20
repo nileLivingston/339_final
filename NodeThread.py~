@@ -1,0 +1,18 @@
+"""
+	CSCI 334: Distributed Systems
+	Williams College
+	Spring 2014
+
+	Final Project: BLiP: Peer-to-Peer Chat
+	Authors: 
+		Jeremy Boissevain
+		Nile Livingston
+		Nehemiah Paramore
+
+        This is a very simple thread wrapper for the entangled node. 
+
+"""
+
+import threading
+
+class NodeThread(threading.Thread):
