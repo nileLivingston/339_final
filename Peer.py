@@ -28,12 +28,15 @@ import socket
 import rsa
 import os
 import os.path
+import json
+import entangled.kademlia.node
 
 # Local files
 import ServerThread as sv
 import ChatThread as ch
 import BLiPGUI as gui
 import LoginGUI as lgui
+import NodeThread as nt
 
 
 class Peer():
@@ -44,17 +47,30 @@ class Peer():
 
 		# To hold (username, public user key) pairs.
 		self.friends = dict()
+                self.friendsStub = dict()
 
 		# The file path for the persistent friends list.
 		# This file contains lines of the form:
 		# 	friend_username,key.n,key.e
 		self.friendsFilePath = "friends.txt"
+                self.friendJson = "friends.json"
 
 		# The filename storing the user keys
 		self.userKeyFilePath = 'user_keys.pem'
 
+                # Given that I'm now treating the friends file as a Json File
+                if os.path.isfile(self.friendsJson):
+                        with open(self.friendsJson) as friends:
+                                data = json.load(friends)
+                                friends.close()
+                                self.friends = data
+                else:
+                        data = open(self.friendsJson, "w")
+                        data.close()
+                
 		# Grab the friends file and extract to self.friends.
-		if os.path.isfile(self.friendsFilePath):
+		"""
+                if os.path.isfile(self.friendsFilePath):
 			f = open(self.friendsFilePath, "r")
 			lines = f.readlines()
 			f.close()
@@ -68,6 +84,7 @@ class Peer():
 		else:
 			f = open(self.friendsFilePath, "w")
 			f.close()
+                """
 
 		# The port for the listener server.
 		# TODO: Currently a command line argument for testing. Set to constant later.
@@ -90,7 +107,9 @@ class Peer():
 		# To hold the user's public and private user keys.
 		self.public_user_key = None
 		self.private_user_key = None
-	
+
+                # DHT node thread, initialize here.
+                self.node = nt.NodeThread(self, self.username, self.getAddress)
 
 	#########################################
 	#	ACCESSOR METHODS
@@ -103,7 +122,8 @@ class Peer():
   	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
 	def getAddress(self, username):
-		return ("137.165.169.58", 50007)
+                return (str(socket.gethostbyname(socket.getfqdn())), 50007)
+		#return ("137.165.169.58", 50007)
 
   	# Returns the chat thread associated with a particular username.
   	# Return None if no such chat session exists.
@@ -114,7 +134,9 @@ class Peer():
 
 	# Return the list of friend usernames.
 	def getFriends(self):
-		return self.friends.keys()
+                output = self.friends.keys()
+                output.sort()
+                return output
 
 	# Return the private user key.
 	def getPrivateKey(self):
@@ -148,6 +170,11 @@ class Peer():
 			self.gui.showMessage("You cannot be friends with yourself.")
 			return
 		self.addUserAndKey(username, None)
+
+                
+	# Add a username and associated key to friends list.
+	def addUserAndKey(self, username, key):
+                
 
 	# Add a username and associated key to friends list.
 	def addUserAndKey(self, username, key):
@@ -187,7 +214,7 @@ class Peer():
 		# Update the dict and the GUI.
 		self.friends[username] = key
 		self.gui.updateFriends()
-
+                
 	# Add a ChatThread to the list and start it.
 	def addNewChatThread(self, socket, auth_stance):
 		chat = ch.ChatThread(self, socket, self.gui, auth_stance)	
