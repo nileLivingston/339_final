@@ -21,16 +21,27 @@ class NodeThread(threading.Thread):
     @param : username - Username of caller [string]
     @param : IPAddress - address of caller ('ipaddress', port)
     """
-    def __init__(self, username, IPAddress):
+    def __init__(self):
+        super(NodeThread, self).__init__()
+
+        self.node = None
+
+    def run(self):
+        #Create the node
         self.node = entangled.node.EntangledNode()
-        # publish own connection info. not sure if this should 
-        # happen later after attempting to join nodes or before. 
-        self.node.publishData(self, username, IPAddress)
-        
+
+    #def exit(self):
+
+
+    def publishData(self, username, address):
+        self.node.publishData(username, address)
+
+    def joinNetwork(ipList):
+        self.node.joinNetwork(ipList)
     ####################################
     # Node Method Wrappers             #
     ####################################
-    
+
     # I'm not going to define any methods just yet, simply call
     # all methods through NodeThread.node.(entangled node method)
     

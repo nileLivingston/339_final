@@ -236,7 +236,7 @@ class ChatThread(threading.Thread):
 		ip = str(socket.gethostbyname(socket.getfqdn()))
 		# Pack into protocol and send.
 		# UDP port is static for now, but may later allow it to be changed, so we exchange ports for now.
-		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + self.udp_port
+		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + str(self.udp_port)
 		self.sock.sendall(encoded)
 
 		# Receive (initiator username, initiator public key)
@@ -348,7 +348,7 @@ class ChatThread(threading.Thread):
 		ip = str(socket.gethostbyname(socket.getfqdn()))
 		# Pack into protocol and send.
 		# UDP port is static for now, but may later allow it to be changed, so we exchange ports for now.
-		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + self.udp_port
+		encoded = username + "," + str(pub_key.n) + "," + str(pub_key.e) + "," + ip + "," + str(self.udp_port)
 		self.sock.sendall(encoded)
 
 	# Generate and exchange public session keys with the receiver.

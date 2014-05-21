@@ -64,14 +64,18 @@ class Peer():
 			f = open(self.friendsJson, "r+")
 			try:
 				data = json.load(f)
+				
 				self.friendObjects = data
-				for friend in friendObjects:
-					self.friends[friend.key()] = friend[key]
-				self.gui.updateFriends()
-				print "try succeeded"
-			except:
-				print "try failed."
-				pass	
+
+				for friend, info in self.friendObjects.iteritems():
+					self.friends[friend] = info["key"]
+
+			except ValueError, e:
+				print "ValueError"
+				print e
+			except Exception, e:
+				print e
+
 			f.close()
 
 		else:
@@ -100,8 +104,8 @@ class Peer():
 		self.public_user_key = None
 		self.private_user_key = None
 
-		# DHT node thread, initialize here.
-		#self.node = nt.NodeThread(self, self.username, self.getAddress)
+		# DHT node thread
+		self.node = None
 
 	#########################################
 	#	ACCESSOR METHODS
@@ -110,6 +114,9 @@ class Peer():
 	# Return the list of active ChatThreads
 	def getActiveChats(self):
 		return self.chats
+
+	def getOwnAddress(self):
+		return (str(socket.gethostbyname(socket.getfqdn())), 50007)
 
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
@@ -238,13 +245,29 @@ class Peer():
 		# Start up the listener server.
 		self.server = sv.ServerThread(self, self.port)
 		self.server.start()
-		
+
+		#Create entangled node and start node thread
+		self.node = nt.NodeThread()
+		self.node.start()
+		#Generate list of known friend IPs
+		ipList = []
+		for user, info in self.friendObjects.iteritems():
+			if info["ip"] != None:
+				ipList.append((info["ip"],info["port"]))
+		#Attempt to join network using list of known IPs
+		self.node.joinNetwork(ipList)
+
+		#TODO: Add notification if none of the IPs found were online and able to be joined.
+
+		#Publish own data to the network
+		self.node.publishData(self.username, getOwnAddress())
 
 	# Exit out of everything.
 	def logout(self):
 		for chat in self.chats:
 			chat.exit("ACTIVE")
 		self.server.exit()
+		self.node.exit()
 		self.authenticated = False
 
 	# Make a TCP connection with (IP, port) and return socket.
