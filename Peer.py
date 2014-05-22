@@ -121,9 +121,8 @@ class Peer():
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
 	def getAddress(self, username):
-		#todo:DHT
-		return (str(socket.gethostbyname(socket.getfqdn())), 50007)
-		#return ("137.165.169.58", 50007)
+                # I'm pretty sure this should work, but I'm unable to test it right now. 
+                return self.node.findValue(username)
 
 	# Returns the chat thread associated with a particular username.
 	# Return None if no such chat session exists.
