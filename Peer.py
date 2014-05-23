@@ -32,6 +32,7 @@ import json
 import entangled.kademlia.node
 import twisted
 import ast
+import inspect
 
 # Local files
 import ServerThread as sv
@@ -119,6 +120,7 @@ class Peer():
 		# DHT node thread
 		self.node = None
                 self.result = None
+
 	#########################################
 	#	ACCESSOR METHODS
 	#########################################
@@ -128,7 +130,7 @@ class Peer():
 		return self.chats
 
 	def getOwnAddress(self):
-		return (str(socket.gethostbyname(socket.getfqdn())), self.port)
+                return (str(socket.gethostbyname(socket.getfqdn())), self.port)
 
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
@@ -138,7 +140,7 @@ class Peer():
                         sender.result = result
 		df = self.node.searchForKeywords([key])
 		df.addCallback(gotValue)
-
+                
 
 	# Returns the chat thread associated with a particular username.
 	# Return None if no such chat session exists.
@@ -230,11 +232,13 @@ class Peer():
 	def initiateChat(self, username):
 		# Get the address and make the connection.
 		#(IP, port) = self.getAddress(username) # we need to ensure that this calls
-                
-                self.getAddress(self, username)
-                IP, port = None, None
-                if self.result != None:
-                        (IP, port) = self.result
+
+                #self.getAddress(self, username)
+                #(IP, port) = self.getValue(username)
+                #IP, port = None, None
+                #if self.result != None:
+                #print self.result
+                #(IP, port) = self.result
                 
 		sock = self.makeConnection(IP, port)
 
@@ -269,13 +273,12 @@ class Peer():
 
 		# Start up the listener server.
 		self.server = sv.ServerThread(self, self.port)
+                # the server listening may be blocking the twisted port
 		self.server.start()
 
 		#Create entangled node and start node thread
-		#self.node = nt.NodeThread(self.udp_port)
-		#self.node.start()
                 self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
-
+                
 		#Generate list of known friend IPs
 		ipList = []
 		portList = []
@@ -283,19 +286,56 @@ class Peer():
 			if info["ip"] != None:
 				ipList.append( info["ip"])
 				portList.append( int(info["port"]))
-		#Attempt to join network using list of known IPs
+
+                #Attempt to join network using list of known IPs
 		result = zip(ipList, portList)
-		#print result
+
 		self.node.joinNetwork(result)
 
 		self.node.printContacts()
 		#TODO: Add notification if none of the IPs found were online and able to be joined.
+                # nothing is being published.
+                self.publishData()
+                #df.addCallback(self.publishDataCallback)
+        
+        ############################
+        #### Callback functions ####
+        ############################
 
-		#Publish own data to the network
-		def completed(result):
-			print result
-		df = self.node.publishData(self.username, self.getOwnAddress())
-		df.addCallback(completed)
+        def genericErrorCallback(self,failure):
+                print 'Error occured:', failure.getErrorMessage()
+                twisted.internet.reactor.callLater(0, self.stop)
+
+        def stop():
+                twisted.internet.reactor.stop()
+
+        def getValue(self, key):
+                print "getValue called."
+                print key
+                key = key.encode('utf-8')
+                df = self.node.searchForKeywords(key)
+                df.addCallback(self.getValueCallback)
+                df.addErrback(self.genericErrorCallback)
+
+        def getValueCallback(self, result):
+                if type(result) == dict:
+                        print result
+                        return result
+                else:
+                        print 'Value not found'
+                print 'Scheduling key removal'
+                twisted.internet.reactor.callLater(1, self.deleteValue)
+
+        def publishDataCallback(self, *args, **kwargs):
+                print "Data published in the DHT"
+                print "Scheduling retrieval of published data"
+                twisted.internet.reactor.callLater(1, self.getValue)
+
+        def publishData(self):
+                df = self.node.publishData(self.username, self.getOwnAddress())
+                print self.username
+                df.addCallback(self.publishDataCallback)
+                df.addErrback(self.genericErrorCallback)
 
 	# Exit out of everything.
 	def logout(self):
