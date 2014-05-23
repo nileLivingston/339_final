@@ -36,8 +36,6 @@ import ServerThread as sv
 import ChatThread as ch
 import BLiPGUI as gui
 import LoginGUI as lgui
-import NodeThread as nt
-
 
 class Peer():
 
@@ -65,8 +63,7 @@ class Peer():
 					for key, val in info.iteritems():
 						if isinstance(val, unicode):
 							info[key] = val.encode('utf-8')
-
-														
+										
 				self.friendObjects = data
 
 				for friend, info in self.friendObjects.iteritems():
@@ -74,11 +71,10 @@ class Peer():
 						info["key"] = rsa.PublicKey.load_pkcs1(info["key"])
 					self.friends[friend] = info["key"]
 
-			except ValueError, e:
-				print "ValueError"
-				print e
 			except Exception, e:
 				print e
+				d = {}
+				json.dump(d, f)
 
 			f.close()
 
@@ -137,7 +133,7 @@ class Peer():
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Currently hardcoded for Nile's machine.
 	# Do address resolution stuff with a real DHT.
-	def getAddress(self, sender, username):
+	def getAddress(self, username):
 		return ("137.165.169.58", 50007)
 		# key = username
 		
@@ -213,7 +209,8 @@ class Peer():
 
 		#copy the friendObjects, and then change the value of key so that it can be saved in a file
 		tmp = self.friendObjects.copy()
-				tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
+		if tmp[username]["key"] != None:
+			tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
 
 		#write to file
 		f = open(self.friendsJson, "w")
@@ -298,7 +295,7 @@ class Peer():
 		self.server.start()
 
 		#Create entangled node and start node thread
-				self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
+		self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
 				
 		#Generate list of known friend IPs
 		ipList = []
@@ -318,51 +315,50 @@ class Peer():
 		# nothing is being published.
 		self.publishData()
 		
-		############################
-		#### Callback functions ####
-		############################
+	############################
+	#### Callback functions ####
+	############################
 
-		def genericErrorCallback(self,failure):
-				print 'Error occured:', failure.getErrorMessage()
-				twisted.internet.reactor.callLater(0, self.stop)
+	def genericErrorCallback(self,failure):
+		print 'Error occured:', failure.getErrorMessage()
+		twisted.internet.reactor.callLater(0, self.stop)
 
-		def stop():
-				twisted.internet.reactor.stop()
+	def stop():
+		twisted.internet.reactor.stop()
 
-		def getValue(self, key):
-				print "getValue called."
-				print key
-				key = key.encode('utf-8')
-				df = self.node.searchForKeywords(key)
-				df.addCallback(self.getValueCallback)
-				df.addErrback(self.genericErrorCallback)
+	def getValue(self, key):
+		print "getValue called."
+		print key
+		key = key.encode('utf-8')
+		df = self.node.searchForKeywords(key)
+		df.addCallback(self.getValueCallback)
+		df.addErrback(self.genericErrorCallback)
 
-		def getValueCallback(self, result):
-				if type(result) == dict:
-						print result
-						return result
-				else:
-						print 'Value not found'
-				print 'Scheduling key removal'
-				twisted.internet.reactor.callLater(1, self.deleteValue)
+	def getValueCallback(self, result):
+		if type(result) == dict:
+				print result
+				return result
+		else:
+				print 'Value not found'
+		print 'Scheduling key removal'
+		twisted.internet.reactor.callLater(1, self.deleteValue)
 
-		def publishDataCallback(self, *args, **kwargs):
-				print "Data published in the DHT"
-				print "Scheduling retrieval of published data"
-				twisted.internet.reactor.callLater(1, self.getValue)
+	def publishDataCallback(self, *args, **kwargs):
+		print "Data published in the DHT"
+		print "Scheduling retrieval of published data"
+		twisted.internet.reactor.callLater(1, self.getValue)
 
-		def publishData(self):
-				df = self.node.publishData(self.username, self.getOwnAddress())
-				print self.username
-				df.addCallback(self.publishDataCallback)
-				df.addErrback(self.genericErrorCallback)
+	def publishData(self):
+		df = self.node.publishData(self.username, self.getOwnAddress())
+		print self.username
+		df.addCallback(self.publishDataCallback)
+		df.addErrback(self.genericErrorCallback)
 
 	# Exit out of everything.
 	def logout(self):
 		for chat in self.chats:
 			chat.exit("ACTIVE")
 		self.server.exit()
-		self.node.exit()
 		self.authenticated = False
 
 	# Make a TCP connection with (IP, port) and return socket.
@@ -386,30 +382,35 @@ class Peer():
 		
 	# Remove a username from the friends list.
 	def removeFriend(self, username):
+
 		if username in self.friends:
-			# Remove friend from file.
-			f = open(self.friendsFilePath, "r")
-			lines = f.readlines()
-			contents = ""
-			for line in lines:
-				cur = line[:line.index(',')]
-				if not cur == username:
-					contents += line
-			f.close()
-			os.remove(self.friendsFilePath)
-			f = open(self.friendsFilePath, "w+")
-			f.write(contents)
-			f.close()
+			# Update dicts
+			self.friends.pop(username)
+			self.friendObjects.pop(username)
+
+			#remove the file
+			os.remove(self.friendsJson)
+		
+			#recreate the file
+			f = open(self.friendsJson, 'w+')
+		
+			#copy data, modify to allow json serialization
+			tmp = self.friendObjects.copy()
+			for info in tmp.itervalues():
+				if info["key"] != None:
+					info["key"] = info["key"].save_pkcs1()
+		
+			#dump updated friend dict to file
+			json.dump(tmp, f)
 
 			# Update dict and GUI.
-			self.friends.pop(username)
 			if self.gui_enabled:
 				self.gui.updateFriends()
 		else:
 			if self.gui_enabled:
 				self.gui.showMessage("This username is not in your friends list.")
 			return
-
+		
 	# Start up the BLiP GUI.
 	def startGUI(self):
 		self.gui = gui.BLiPGUI(self)
