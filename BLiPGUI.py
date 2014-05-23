@@ -200,10 +200,12 @@ class BLiPGUI():
 		if not (self.active_chat_session == None or self.active_chat_session == ""):
 			# Get the chat log from the chat thread and update the text log.
 			chat_session = self.peer.getChatSession(self.active_chat_session)
-			log = chat_session.getLog()
-			
-			for line in log:
-				self.chat_log.insert(INSERT, line + "\n")
+			if not chat_session == None:
+				log = chat_session.getLog()
+				
+				for line in log:
+					self.chat_log.insert(INSERT, line + "\n")
+				self.chat_log.see(END)
 
 		# Make the log uneditable.
 		self.chat_log.config(state=DISABLED)
@@ -212,6 +214,7 @@ class BLiPGUI():
 	#	MESSAGE METHODS
 	#########################################
 
+	# Displays a pop-up message.
 	def showMessage(self, text):
 		tkMessageBox.showinfo("BLiP Warning", text)
 

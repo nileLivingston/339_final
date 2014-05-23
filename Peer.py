@@ -23,10 +23,6 @@
 		-Sending too much chat data breaks receiver,
 		due to RSA VARBLOCK stuff. You have to send
 		around 1000 chars at once to break it.
-
-	Small touches:
-		-Make chat window auto-scroll.
-
 """
 
 # Libraries
@@ -36,6 +32,7 @@ import socket
 import rsa
 import os
 import os.path
+import random
 
 # Local files
 import ServerThread as sv
@@ -46,7 +43,7 @@ import LoginGUI as lgui
 
 class Peer():
 
-	def __init__(self):
+	def __init__(self, gui_enabled=True):
 		# A list to hold ChatThreads.
 		self.chats = []
 
@@ -87,6 +84,11 @@ class Peer():
 		# Is the user logged into the chat system?
 		self.authenticated = False
 
+		self.gui_enabled = gui_enabled
+
+		if not self.gui_enabled:
+			self.port = random.randint(40000, 50000)
+
 		# The TKinter GUI used for BLiP.
 		self.gui = None
 
@@ -122,7 +124,9 @@ class Peer():
 
 	# Return the list of friend usernames.
 	def getFriends(self):
-		return self.friends.keys()
+		output = self.friends.keys()
+		output.sort()
+		return output
 
 	# Return the private user key.
 	def getPrivateKey(self):
@@ -152,17 +156,21 @@ class Peer():
 	# Add a username to the friends list without knowing public key.
 	def addFriend(self, username):
 		if username in self.friends:
-			self.gui.showMessage("This username is already in your friends list.")
+			if self.gui_enabled:
+				self.gui.showMessage("This username is already in your friends list.")
 			return
+
 		# Forever alone
 		if username == self.username:
-			self.gui.showMessage("You cannot be friends with yourself.")
+			if self.gui_enabled:
+				self.gui.showMessage("You cannot be friends with yourself.")
 			return
 		
 		self.addUserAndKey(username, None)
 
 	# Add a username and associated key to friends list.
 	def addUserAndKey(self, username, key):
+
 		# Name already in file, just need to update key.
 		if username in self.friends:
 
@@ -198,7 +206,8 @@ class Peer():
 
 		# Update the dict and the GUI.
 		self.friends[username] = key
-		self.gui.updateFriends()
+		if self.gui_enabled:
+			self.gui.updateFriends()
 
 	# Add a ChatThread to the list and start it.
 	def addNewChatThread(self, socket, auth_stance):
@@ -214,8 +223,9 @@ class Peer():
 			if chat.getReceiver() == username:
 				chat.exit(stance)
 				self.chats.remove(chat)
-				self.gui.updateChatSessions()
-				self.gui.updateChatLog()
+				if self.gui_enabled:
+					self.gui.updateChatSessions()
+					self.gui.updateChatLog()
 				return
 
 	# Make a TCP connection and start a new chat thread.
@@ -226,7 +236,8 @@ class Peer():
 
 		# If socket fails, friend is not online.
 		if sock == None:
-			self.gui.showMessage("Friend is not online.")
+			if self.gui_enabled:
+				self.gui.showMessage("Friend is not online.")
 			return
 		
 		# Create chat thread.
@@ -303,9 +314,11 @@ class Peer():
 
 			# Update dict and GUI.
 			self.friends.pop(username)
-			self.gui.updateFriends()
+			if self.gui_enabled:
+				self.gui.updateFriends()
 		else:
-			self.gui.showMessage("This username is not in your friends list.")
+			if self.gui_enabled:
+				self.gui.showMessage("This username is not in your friends list.")
 			return
 
 	# Start up the BLiP GUI.
@@ -322,6 +335,16 @@ class Peer():
 				return
 		return None
 
+	def stressSendMessage(self, username, message):
+		while True:
+			for thread in self.chats:
+				if thread.getReceiver() == username:
+					while thread.isAuthenticating():
+						pass
+					for i in range(1, 11):
+						thread.sendMessage("[" + str(i) + "]" + message)
+					return
+
 ################################################################
 #	Main method stuff below.
 ################################################################
@@ -336,6 +359,16 @@ def run(peer):
 	while peer.isAuthenticated():
 		pass
 	run(peer)
+
+# Used for stress testing number of concurrent chats.
+def stressRun(the_peer, receiver):
+	# Use random username to avoid conflicts
+	the_peer.login(str(random.getrandbits(20)))
+	the_peer.addFriend(receiver)
+	the_peer.initiateChat(receiver)
+	the_peer.stressSendMessage(receiver, "This is a stress message. It is pretty short.")
+	the_peer.endChat(receiver, "ACTIVE")
+	the_peer.logout()
 
 if __name__ == '__main__':
 	peer = Peer()

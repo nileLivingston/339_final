@@ -58,8 +58,6 @@ class ServerThread(threading.Thread):
 	def run(self):	
 		print "Server is listening..."
 		while self.running:	
-
-			# TODO: Make nonblocking? Thread can't stop...
 			self.s.listen(1)
 			conn, addr = self.s.accept()
 
