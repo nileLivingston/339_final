@@ -70,11 +70,12 @@ class Peer():
 					for key, val in info.iteritems():
 						if isinstance(val, unicode):
 							info[key] = val.encode('utf-8')
-					info["key"] = rsa.PublicKey.load_pkcs1(info["key"])
 
 				self.friendObjects = data
 
 				for friend, info in self.friendObjects.iteritems():
+					if info["key"] != None:
+						info["key"] = rsa.PublicKey.load_pkcs1(info["key"])
 					self.friends[friend] = info["key"]
 
 			except ValueError, e:

@@ -29,7 +29,8 @@ class NodeThread(threading.Thread):
 
     def run(self):
         #Create the node
-        self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
+        #self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
+        self.node = entangled.dtuple.DistributedTupleSpacePeer( udpPort = self.udp_port)
 
     def exit(self):
         self.node = None
