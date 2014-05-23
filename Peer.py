@@ -15,14 +15,6 @@
 		-Some number of ChatThreads, each of which individually
 		manages an end-to-end chat session.
 
-	To Do:
-		-Address resolution via DHT.
-		-Evaluation
-
-	Bugs to fix:
-		-Sending too much chat data breaks receiver,
-		due to RSA VARBLOCK stuff. You have to send
-		around 1000 chars at once to break it.
 """
 
 # Libraries
@@ -33,12 +25,18 @@ import rsa
 import os
 import os.path
 import random
+import json
+import entangled.kademlia.node
+import twisted
+import ast
+import inspect
 
 # Local files
 import ServerThread as sv
 import ChatThread as ch
 import BLiPGUI as gui
 import LoginGUI as lgui
+import NodeThread as nt
 
 
 class Peer():
@@ -49,34 +47,51 @@ class Peer():
 
 		# To hold (username, public user key) pairs.
 		self.friends = dict()
+		self.friendObjects = dict()
 
 		# The file path for the persistent friends list.
-		# This file contains lines of the form:
-		# 	friend_username,key.n,key.e
-		self.friendsFilePath = "friends.txt"
+		self.friendsJson = 'friends.json'
 
 		# The filename storing the user keys
 		self.userKeyFilePath = 'user_keys.pem'
 
-		# Grab the friends file and extract to self.friends.
-		if os.path.isfile(self.friendsFilePath):
-			f = open(self.friendsFilePath, "r")
-			lines = f.readlines()
+		# Loading data from Json file.
+		if os.path.isfile(self.friendsJson):
+						
+			f = open(self.friendsJson, "r+")
+			try:
+				data = json.load(f)
+				for info in data.itervalues():
+					for key, val in info.iteritems():
+						if isinstance(val, unicode):
+							info[key] = val.encode('utf-8')
+
+														
+				self.friendObjects = data
+
+				for friend, info in self.friendObjects.iteritems():
+					if info["key"] != None:
+						info["key"] = rsa.PublicKey.load_pkcs1(info["key"])
+					self.friends[friend] = info["key"]
+
+			except ValueError, e:
+				print "ValueError"
+				print e
+			except Exception, e:
+				print e
+
 			f.close()
-			for line in lines:
-				parts = line.split(",")
-				username = parts[0]
-				key_n = long(parts[1])
-				key_e = long(parts[2])
-				self.friends[username] = rsa.PublicKey(key_n, key_e)
-		# Make the friends file.
+
 		else:
-			f = open(self.friendsFilePath, "w")
-			f.close()
+			data = open(self.friendsJson, "w")
+			data.close()
 
 		# The port for the listener server.
 		# TODO: Currently a command line argument for testing. Set to constant later.
 		self.port = int(sys.argv[1])
+
+		#the port for the kademlia node
+		self.udp_port = int(sys.argv[2])
 
 		# To hold the listener server.
 		self.server = None
@@ -84,8 +99,10 @@ class Peer():
 		# Is the user logged into the chat system?
 		self.authenticated = False
 
+		# Is the GUI enabled? Used for stress testing.
 		self.gui_enabled = gui_enabled
 
+		# Randomly assign port: used for stress testing
 		if not self.gui_enabled:
 			self.port = random.randint(40000, 50000)
 
@@ -100,23 +117,38 @@ class Peer():
 		# To hold the user's public and private user keys.
 		self.public_user_key = None
 		self.private_user_key = None
-	
+
+		# DHT node thread
+		self.node = None
+		self.result = None
 
 	#########################################
 	#	ACCESSOR METHODS
 	#########################################
 
 	# Return the list of active ChatThreads
-  	def getActiveChats(self):
-  		return self.chats
+	def getActiveChats(self):
+		return self.chats
 
-  	# Returns the (IP, port) pair associated with a username.
-	# TODO: Address resolution stuff with a real DHT.
-	def getAddress(self, username):
+	# Returns address of our own peer.
+	def getOwnAddress(self):
+		return (str(socket.gethostbyname(socket.getfqdn())), self.port)
+
+	# Returns the (IP, port) pair associated with a username.
+	# TODO: Currently hardcoded for Nile's machine.
+	# Do address resolution stuff with a real DHT.
+	def getAddress(self, sender, username):
 		return ("137.165.169.58", 50007)
-
-  	# Returns the chat thread associated with a particular username.
-  	# Return None if no such chat session exists.
+		# key = username
+		
+		# def gotValue(result):
+			# sender.result = result
+		
+		# df = self.node.searchForKeywords([key])
+		# df.addCallback(gotValue)
+				
+	# Returns the chat thread associated with a particular username.
+	# Return None if no such chat session exists.
 	def getChatSession(self, username):
 		for chat in self.chats:
 			if chat.getReceiver() == username: return chat
@@ -137,14 +169,14 @@ class Peer():
 		return self.public_user_key
 
 	# Return the username.
-  	def getUsername(self):
-  		return self.username
+	def getUsername(self):
+		return self.username
 
-  	# Get the public user key for a particular username.
-  	def getUserKeyFor(self, username):
-  		return self.friends[username]
+	# Get the public user key for a particular username.
+	def getUserKeyFor(self, username):
+		return self.friends[username]
 
-  	# Is the user logged into the chat system?
+	# Is the user logged into the chat system?
 	def isAuthenticated(self):
 		return self.authenticated
 
@@ -165,47 +197,33 @@ class Peer():
 			if self.gui_enabled:
 				self.gui.showMessage("You cannot be friends with yourself.")
 			return
-		
-		self.addUserAndKey(username, None)
 
+		self.addUserAndKey(username, None, None, None)
+				
 	# Add a username and associated key to friends list.
-	def addUserAndKey(self, username, key):
+	def addUserAndKey(self, username, key, ip, port):
+		#change friend dictionary
+		friend = {"key":key, "ip": ip, "port":port}
 
-		# Name already in file, just need to update key.
-		if username in self.friends:
+		self.friendObjects[username] = friend
+		self.friends[username] = key
 
-			# Get all of the current content of the friends file, but
-			# overwrite the line with the username we're looking for.
-			f = open(self.friendsFilePath, "r")
-			lines = f.readlines()
-			contents = ""
-			for line in lines:
-				cur = line[:line.index(',')]
-				if not cur == username:
-					contents += line
-				else:
-					contents += cur + "," + str(key.n) + "," + str(key.e) + "\n"
-			f.close()
+		#remove existing file
+		os.remove(self.friendsJson)
 
-			# Remove the file.
-			os.remove(self.friendsFilePath)
+		#copy the friendObjects, and then change the value of key so that it can be saved in a file
+		tmp = self.friendObjects.copy()
+				tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
 
-			# Rewrite the file with the updated info.
-			f = open(self.friendsFilePath, "w+")
-			f.write(contents)
-			f.close()
-
-		# Name not in file, just append the line.
-		else:
-			f = open(self.friendsFilePath, "a")
-			if key == None:
-				f.write(username + ",None,None\n")
-			else:
-				f.write(username + "," + str(key.n) + "," + str(key.e) + "\n")
-			f.close()
+		#write to file
+		f = open(self.friendsJson, "w")
+		json.dump(tmp, f)
 
 		# Update the dict and the GUI.
 		self.friends[username] = key
+		if self.gui_enabled:
+			self.gui.updateFriends()
+
 		if self.gui_enabled:
 			self.gui.updateFriends()
 
@@ -230,8 +248,18 @@ class Peer():
 
 	# Make a TCP connection and start a new chat thread.
 	def initiateChat(self, username):
+
 		# Get the address and make the connection.
-		(IP, port) = self.getAddress(username)
+		(IP, port) = self.getAddress(username) # we need to ensure that this calls
+
+		# DHT stuff.
+		#self.getAddress(self, username)
+		#(IP, port) = self.getValue(username)
+		#IP, port = None, None
+		#if self.result != None:
+		#print self.result
+		#(IP, port) = self.result
+				
 		sock = self.makeConnection(IP, port)
 
 		# If socket fails, friend is not online.
@@ -266,14 +294,75 @@ class Peer():
 
 		# Start up the listener server.
 		self.server = sv.ServerThread(self, self.port)
+				# the server listening may be blocking the twisted port
 		self.server.start()
+
+		#Create entangled node and start node thread
+				self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
+				
+		#Generate list of known friend IPs
+		ipList = []
+		portList = []
+		for info in self.friendObjects.itervalues():
+			if info["ip"] != None:
+				ipList.append( info["ip"])
+				portList.append( int(info["port"]))
+
+		# Attempt to join network using list of known IPs
+		result = zip(ipList, portList)
+
+		self.node.joinNetwork(result)
+
+		self.node.printContacts()
+		#TODO: Add notification if none of the IPs found were online and able to be joined.
+		# nothing is being published.
+		self.publishData()
 		
+		############################
+		#### Callback functions ####
+		############################
+
+		def genericErrorCallback(self,failure):
+				print 'Error occured:', failure.getErrorMessage()
+				twisted.internet.reactor.callLater(0, self.stop)
+
+		def stop():
+				twisted.internet.reactor.stop()
+
+		def getValue(self, key):
+				print "getValue called."
+				print key
+				key = key.encode('utf-8')
+				df = self.node.searchForKeywords(key)
+				df.addCallback(self.getValueCallback)
+				df.addErrback(self.genericErrorCallback)
+
+		def getValueCallback(self, result):
+				if type(result) == dict:
+						print result
+						return result
+				else:
+						print 'Value not found'
+				print 'Scheduling key removal'
+				twisted.internet.reactor.callLater(1, self.deleteValue)
+
+		def publishDataCallback(self, *args, **kwargs):
+				print "Data published in the DHT"
+				print "Scheduling retrieval of published data"
+				twisted.internet.reactor.callLater(1, self.getValue)
+
+		def publishData(self):
+				df = self.node.publishData(self.username, self.getOwnAddress())
+				print self.username
+				df.addCallback(self.publishDataCallback)
+				df.addErrback(self.genericErrorCallback)
 
 	# Exit out of everything.
 	def logout(self):
 		for chat in self.chats:
 			chat.exit("ACTIVE")
 		self.server.exit()
+		self.node.exit()
 		self.authenticated = False
 
 	# Make a TCP connection with (IP, port) and return socket.
@@ -373,5 +462,5 @@ def stressRun(the_peer, receiver):
 if __name__ == '__main__':
 	peer = Peer()
 	run(peer)
-
+	twisted.internet.reactor.run()
 
