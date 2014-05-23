@@ -61,16 +61,17 @@ class Peer():
 
 		self.userKeyFilePath = 'user_keys.pem'
 
-		# Given that I'm now treating the friends file as a Json File
 		if os.path.isfile(self.friendsJson):
+                        
 			f = open(self.friendsJson, "r+")
 			try:
 				data = json.load(f)
 				for info in data.itervalues():
 					for key, val in info.iteritems():
 						if isinstance(val, unicode):
-							info[key] = val.encode('utf-8')
+                                                        info[key] = val.encode('utf-8')
 
+                                                        
 				self.friendObjects = data
 
 				for friend, info in self.friendObjects.iteritems():
@@ -117,7 +118,7 @@ class Peer():
 
 		# DHT node thread
 		self.node = None
-
+                self.result = None
 	#########################################
 	#	ACCESSOR METHODS
 	#########################################
@@ -131,15 +132,13 @@ class Peer():
 
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
-	def getAddress(self, username):
-		ret = []
-		def gotValue(result):
-			print result
-			ret = result
-			
-		df = self.node.searchForKeywords([username])
+	def getAddress(self, sender, username):
+                key = username
+                def gotValue(result):
+                        sender.result = result
+		df = self.node.searchForKeywords([key])
 		df.addCallback(gotValue)
-		return ret
+
 
 	# Returns the chat thread associated with a particular username.
 	# Return None if no such chat session exists.
@@ -201,7 +200,7 @@ class Peer():
 
 		#copy the friendObjects, and then change the value of key so that it can be saved in a file
 		tmp = self.friendObjects.copy()
-		tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
+                tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
 
 		#write to file
 		f = open(self.friendsJson, "w")
@@ -230,8 +229,13 @@ class Peer():
 	# Make a TCP connection and start a new chat thread.
 	def initiateChat(self, username):
 		# Get the address and make the connection.
-		(IP, port) = self.getAddress(username)
-
+		#(IP, port) = self.getAddress(username) # we need to ensure that this calls
+                
+                self.getAddress(self, username)
+                IP, port = None, None
+                if self.result != None:
+                        (IP, port) = self.result
+                
 		sock = self.makeConnection(IP, port)
 
 		# If socket fails, friend is not online.
@@ -268,8 +272,9 @@ class Peer():
 		self.server.start()
 
 		#Create entangled node and start node thread
-		self.node = nt.NodeThread(self.udp_port)
-		self.node.start()
+		#self.node = nt.NodeThread(self.udp_port)
+		#self.node.start()
+                self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
 
 		#Generate list of known friend IPs
 		ipList = []
@@ -277,10 +282,10 @@ class Peer():
 		for info in self.friendObjects.itervalues():
 			if info["ip"] != None:
 				ipList.append( info["ip"])
-				portList.append( info["port"])
+				portList.append( int(info["port"]))
 		#Attempt to join network using list of known IPs
 		result = zip(ipList, portList)
-		print result
+		#print result
 		self.node.joinNetwork(result)
 
 		self.node.printContacts()
