@@ -14,34 +14,42 @@
 """
 
 import threading
-import entangled.node
+import entangled.kademlia.node
+import twisted
 
 class NodeThread(threading.Thread):
     """
     @param : username - Username of caller [string]
     @param : IPAddress - address of caller ('ipaddress', port)
     """
-    def __init__(self):
+    def __init__(self, udp_port):
         super(NodeThread, self).__init__()
-
+        self.udp_port = udp_port
         self.node = None
 
     def run(self):
         #Create the node
-        self.node = entangled.node.EntangledNode()
+        self.node = entangled.node.EntangledNode( udpPort = self.udp_port )
 
-    #def exit(self):
+    def exit(self):
+        self.node = None
 
-
-    def publishData(self, username, address):
-        self.node.publishData(username, address)
-
-    def joinNetwork(ipList):
-        self.node.joinNetwork(ipList)
     ####################################
     # Node Method Wrappers             #
     ####################################
 
-    # I'm not going to define any methods just yet, simply call
-    # all methods through NodeThread.node.(entangled node method)
-    
+    def publishData(self, username, address):
+        return self.node.publishData(username, address)
+
+    def joinNetwork(self, ipList):
+        print ipList
+        return self.node.joinNetwork(ipList)
+
+    def findValue(self, key):
+        return self.node.findValue(key)
+
+    def searchForKeywords(self, keyword):
+        return self.node.searchForKeywords(keyword)
+
+    def printContacts(self):
+        return self.node.printContacts()

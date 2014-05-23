@@ -30,6 +30,8 @@ import os
 import os.path
 import json
 import entangled.kademlia.node
+import twisted
+import ast
 
 # Local files
 import ServerThread as sv
@@ -64,7 +66,12 @@ class Peer():
 			f = open(self.friendsJson, "r+")
 			try:
 				data = json.load(f)
-				
+				for info in data.itervalues():
+					for key, val in info.iteritems():
+						if isinstance(val, unicode):
+							info[key] = val.encode('utf-8')
+					info["key"] = rsa.PublicKey.load_pkcs1(info["key"])
+
 				self.friendObjects = data
 
 				for friend, info in self.friendObjects.iteritems():
@@ -85,6 +92,9 @@ class Peer():
 		# The port for the listener server.
 		# TODO: Currently a command line argument for testing. Set to constant later.
 		self.port = int(sys.argv[1])
+
+		#the port for the kademlia node
+		self.udp_port = int(sys.argv[2])
 
 		# To hold the listener server.
 		self.server = None
@@ -116,13 +126,19 @@ class Peer():
 		return self.chats
 
 	def getOwnAddress(self):
-		return (str(socket.gethostbyname(socket.getfqdn())), 50007)
+		return (str(socket.gethostbyname(socket.getfqdn())), self.port)
 
 	# Returns the (IP, port) pair associated with a username.
 	# TODO: Address resolution stuff with a real DHT.
 	def getAddress(self, username):
-                # I'm pretty sure this should work, but I'm unable to test it right now. 
-                return self.node.findValue(username)
+		ret = []
+		def gotValue(result):
+			print result
+			ret = result
+			
+		df = self.node.searchForKeywords([username])
+		df.addCallback(gotValue)
+		return ret
 
 	# Returns the chat thread associated with a particular username.
 	# Return None if no such chat session exists.
@@ -133,9 +149,9 @@ class Peer():
 
 	# Return the list of friend usernames.
 	def getFriends(self):
-				output = self.friends.keys()
-				output.sort()
-				return output
+		output = self.friends.keys()
+		output.sort()
+		return output
 
 	# Return the private user key.
 	def getPrivateKey(self):
@@ -173,7 +189,7 @@ class Peer():
 				
 	# Add a username and associated key to friends list.
 	def addUserAndKey(self, username, key, ip, port):
-		#change friends dictionary
+		#change friend dictionary
 		friend = {"key":key, "ip": ip, "port":port}
 
 		self.friendObjects[username] = friend
@@ -182,9 +198,13 @@ class Peer():
 		#remove existing file
 		os.remove(self.friendsJson)
 
+		#copy the friendObjects, and then change the value of key so that it can be saved in a file
+		tmp = self.friendObjects.copy()
+		tmp[username]["key"] = tmp[username]["key"].save_pkcs1()
+
 		#write to file
 		f = open(self.friendsJson, "w")
-		json.dump(self.friendObjects, f)
+		json.dump(tmp, f)
 
 		self.gui.updateFriends()
 
@@ -210,6 +230,7 @@ class Peer():
 	def initiateChat(self, username):
 		# Get the address and make the connection.
 		(IP, port) = self.getAddress(username)
+
 		sock = self.makeConnection(IP, port)
 
 		# If socket fails, friend is not online.
@@ -246,20 +267,29 @@ class Peer():
 		self.server.start()
 
 		#Create entangled node and start node thread
-		self.node = nt.NodeThread()
+		self.node = nt.NodeThread(self.udp_port)
 		self.node.start()
+
 		#Generate list of known friend IPs
 		ipList = []
-		for user, info in self.friendObjects.iteritems():
+		portList = []
+		for info in self.friendObjects.itervalues():
 			if info["ip"] != None:
-				ipList.append((info["ip"],info["port"]))
+				ipList.append( info["ip"])
+				portList.append( info["port"])
 		#Attempt to join network using list of known IPs
-		self.node.joinNetwork(ipList)
+		result = zip(ipList, portList)
+		print result
+		self.node.joinNetwork(result)
 
+		self.node.printContacts()
 		#TODO: Add notification if none of the IPs found were online and able to be joined.
 
 		#Publish own data to the network
-		self.node.publishData(self.username, getOwnAddress())
+		def completed(result):
+			print result
+		df = self.node.publishData(self.username, self.getOwnAddress())
+		df.addCallback(completed)
 
 	# Exit out of everything.
 	def logout(self):
@@ -341,5 +371,5 @@ def run(peer):
 if __name__ == '__main__':
 	peer = Peer()
 	run(peer)
-
+	twisted.internet.reactor.run()
 

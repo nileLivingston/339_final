@@ -67,7 +67,7 @@ class ChatThread(threading.Thread):
 		self.key_size = 512 
 
 		#Port to use
-		self.udp_port = 50007
+		self.udp_port = self.peer.udp_port
 
 	# Store, send, and print lines of the conversation.
 	def run(self):
